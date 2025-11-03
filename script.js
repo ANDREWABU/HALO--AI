@@ -506,7 +506,7 @@ function saveBotMessage(text) {
   }
 }
 
-// === ADVANCED CONVERSATION ENGINE WITH FOLLOW-UP, ALTERNATIVES, AND LIVE NEWS ===
+// === ULTRA SMART CONVERSATION ENGINE WITH PROBLEM SOLVING & EMAIL SUGGESTION ===
 async function generateConversationResponse(userMessage) {
   const lowerMessage = userMessage.toLowerCase().trim();
   conversationMemory.conversationDepth++;
@@ -521,7 +521,128 @@ async function generateConversationResponse(userMessage) {
     }
   }
 
-  // Intent & entity extraction
+  // Problem/issue detection and solution suggestion
+  const problemPatterns = [
+    { keywords: ["stressed", "anxious", "anxiety", "overwhelmed", "mental health", "panic"],
+      solutions: [
+        "Try deep breathing exercises or meditation.",
+        "Take a short walk or do some light exercise.",
+        "Talk to a friend or family member about how you feel.",
+        "Consider journaling your thoughts.",
+        "If it persists, consider reaching out to a mental health professional."
+      ] },
+    { keywords: ["school", "homework", "study", "exams", "test", "assignment", "university", "college"],
+      solutions: [
+        "Break your work into smaller, manageable tasks.",
+        "Create a study schedule and stick to it.",
+        "Take regular breaks to avoid burnout.",
+        "Ask teachers or classmates for help if you're stuck.",
+        "Try using online resources like Khan Academy or YouTube tutorials."
+      ] },
+    { keywords: ["relationship", "breakup", "love", "dating", "partner", "boyfriend", "girlfriend"],
+      solutions: [
+        "Communicate openly and honestly with your partner.",
+        "Take time for self-care and reflection.",
+        "Seek advice from trusted friends or family.",
+        "Consider couples counseling if needed.",
+        "Remember, it's okay to take a break and focus on yourself."
+      ] },
+    { keywords: ["money", "broke", "debt", "finance", "financial", "bills", "rent", "job", "unemployed"],
+      solutions: [
+        "Create a simple budget to track your spending.",
+        "Look for ways to reduce unnecessary expenses.",
+        "Consider freelance or part-time work for extra income.",
+        "Reach out to local support services if needed.",
+        "Talk to a financial advisor for long-term planning."
+      ] },
+    { keywords: ["health", "sick", "ill", "doctor", "pain", "injury", "hospital"],
+      solutions: [
+        "Make sure to rest and stay hydrated.",
+        "If symptoms persist, consult a healthcare professional.",
+        "Follow your doctor's advice and take prescribed medication.",
+        "Don't hesitate to ask for help from friends or family."
+      ] },
+    { keywords: ["work", "boss", "colleague", "job", "career", "promotion", "office", "deadline"],
+      solutions: [
+        "Prioritize your tasks and focus on the most important ones first.",
+        "Communicate clearly with your team or manager.",
+        "Take short breaks to stay productive.",
+        "If you're struggling, ask for support or clarification.",
+        "Consider updating your resume and exploring new opportunities if you're unhappy."
+      ] },
+    { keywords: ["email", "write an email", "send an email", "compose email"],
+      solutions: [
+        "I can help you write a professional email. What is the subject and who is it for?"
+      ],
+      isEmail: true
+    },
+    { keywords: ["lonely", "alone", "no friends", "isolated"],
+      solutions: [
+        "Try joining a club or online community with similar interests.",
+        "Reach out to old friends or family members.",
+        "Consider volunteering to meet new people.",
+        "Remember, you're not alone and things can get better."
+      ] },
+    { keywords: ["motivation", "lazy", "can't focus", "procrastinate", "unmotivated"],
+      solutions: [
+        "Set small, achievable goals and reward yourself.",
+        "Remove distractions from your workspace.",
+        "Try the Pomodoro technique: 25 minutes work, 5 minutes break.",
+        "Remind yourself why your goal is important."
+      ] },
+    { keywords: ["family", "parent", "mom", "dad", "sibling", "child", "children"],
+      solutions: [
+        "Have an open conversation with your family members.",
+        "Set healthy boundaries if needed.",
+        "Seek family counseling if issues persist.",
+        "Remember, every family has challenges—you're not alone."
+      ] },
+    { keywords: ["sleep", "insomnia", "can't sleep", "tired", "restless"],
+      solutions: [
+        "Try to keep a regular sleep schedule.",
+        "Avoid screens before bedtime.",
+        "Practice relaxation techniques like deep breathing.",
+        "If sleep problems persist, consult a doctor."
+      ] },
+    { keywords: ["addiction", "drugs", "alcohol", "smoking", "gambling"],
+      solutions: [
+        "Reach out to a support group or counselor.",
+        "Talk to trusted friends or family.",
+        "Set small, realistic goals for change.",
+        "Remember, recovery is a journey and help is available."
+      ] },
+    { keywords: ["violence", "abuse", "harassment", "bullying", "unsafe"],
+      solutions: [
+        "If you're in danger, contact local authorities immediately.",
+        "Reach out to a trusted adult or support service.",
+        "Document incidents if you feel safe to do so.",
+        "You deserve to feel safe and respected."
+      ] },
+    { keywords: ["grief", "loss", "death", "passed away", "mourning"],
+      solutions: [
+        "Allow yourself to feel and express your emotions.",
+        "Talk to someone you trust about your feelings.",
+        "Consider joining a support group.",
+        "Take care of your physical health during this time."
+      ] },
+    // Add more life issues and solutions here as needed
+  ];
+
+  for (const problem of problemPatterns) {
+    for (const word of problem.keywords) {
+      if (lowerMessage.includes(word)) {
+        if (problem.isEmail) {
+          return `Sure! Please tell me the recipient, subject, and what you'd like to say, and I'll draft an email for you.`;
+        }
+        let response = `It sounds like you're dealing with something tough. Here are some ways you could approach it:\n`;
+        response += problem.solutions.map((s, i) => `${i + 1}. ${s}`).join("\n");
+        response += "\n\nWould you like more details on any of these, or want to talk more about it?";
+        return response;
+      }
+    }
+  }
+
+  // Intent & entity extraction (as before)
   const intents = [
     { pattern: /(who are you|what are you|are you real|what can you do)/, response: () => `I'm HALO AI, your personal assistant. I can answer questions, help with research, chat, and more. What would you like to do?` },
     { pattern: /(how are you|how's it going|how do you feel)/, response: () => `I'm just code, but I'm always ready to help! How are you feeling today?` },
@@ -537,8 +658,6 @@ async function generateConversationResponse(userMessage) {
     { pattern: /(weather|temperature|forecast)/, response: () => `I can check the weather for you. Which city or location are you interested in?` },
     { pattern: /(music|song|play|listen)/, response: () => `I can recommend music or find songs for you. What genre or artist do you like?` },
     { pattern: /(movie|film|watch|recommend)/, response: () => `Looking for a movie recommendation? Tell me what genre or mood you're in!` },
-    { pattern: /(stress|sad|depressed|down|upset|unhappy|miserable|heartbroken)/, response: () => `I'm really sorry you're feeling this way. 💙 Want to talk about what's bothering you? Or would you like some tips to feel better?` },
-    { pattern: /(happy|excited|great|awesome|amazing|wonderful|thrilled)/, response: () => `That's wonderful! 😄 What's making you feel so good?` },
     { pattern: /(bored|nothing to do)/, response: () => `Let's find something fun! Want a joke, a fun fact, or a music/movie suggestion?` },
   ];
   for (const intent of intents) {
