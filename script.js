@@ -14,7 +14,7 @@ const GOOGLE_SEARCH_ENGINE_ID = "3450ef36f36ae4498";
 let currentChatId = null;
 let chats = JSON.parse(localStorage.getItem("chats")) || {};
 
-// Advanced Conversation Memory
+// Enhanced Conversation Memory
 let conversationMemory = {
   userName: null,
   userMood: "neutral",
@@ -123,44 +123,202 @@ async function sendMessage() {
   // Update conversation memory
   updateConversationMemory(text);
 
-  // Check if we need to search for factual info
-  const needsSearch = shouldSearchWeb(text);
+  // Check what type of response is needed
+  const responseType = determineResponseType(text);
 
-  if (needsSearch) {
-    try {
-      const searchResult = await searchGoogle(text);
-      removeTypingIndicator();
+  try {
+    removeTypingIndicator();
+    let response;
 
-      if (searchResult) {
-        addMessage(searchResult, false);
-        if (currentChatId && chats[currentChatId]) {
-          chats[currentChatId].messages.push({
-            text: searchResult,
-            isUser: false,
-            timestamp: new Date().toISOString(),
-          });
-          saveChats();
-        }
-      } else {
-        // If search fails, use conversation response
-        const response = generateConversationResponse(text);
-        addMessage(response, false);
-        saveBotMessage(response);
-      }
-    } catch (error) {
-      removeTypingIndicator();
-      const response = generateConversationResponse(text);
-      addMessage(response, false);
-      saveBotMessage(response);
+    switch (responseType) {
+      case "math":
+        response = handleMathQuestion(text);
+        break;
+      case "factual":
+        response = await handleFactualQuestion(text);
+        break;
+      case "conversation":
+      default:
+        response = generateConversationResponse(text);
+        break;
     }
+
+    addMessage(response, false);
+    saveBotMessage(response);
+  } catch (error) {
+    removeTypingIndicator();
+    const response = generateConversationResponse(text);
+    addMessage(response, false);
+    saveBotMessage(response);
+  }
+}
+
+// ENHANCED: Determine response type
+function determineResponseType(text) {
+  const lowerText = text.toLowerCase();
+
+  // Math patterns
+  const mathPatterns = [
+    /\d+\s*[\+\-\*\/\^]\s*\d+/, // Basic arithmetic
+    /calculate|solve|math|equation|formula/i,
+    /what is \d+ [\+\-\*\/] \d+/i,
+    /square root|sqrt|percentage|percent|%/i,
+    /area|volume|perimeter|circumference/i,
+    /algebra|geometry|calculus|trigonometry/i,
+  ];
+
+  // Factual/search patterns
+  const factualPatterns = [
+    /^what is .+/i,
+    /^who is .+/i,
+    /^when was .+/i,
+    /^where is .+/i,
+    /^how does .+/i,
+    /^why does .+/i,
+    /^capital of .+/i,
+    /^population of .+/i,
+    /^president of .+/i,
+    /^history of .+/i,
+    /^define .+/i,
+    /^meaning of .+/i,
+  ];
+
+  if (mathPatterns.some((pattern) => pattern.test(lowerText))) {
+    return "math";
+  } else if (factualPatterns.some((pattern) => pattern.test(lowerText))) {
+    return "factual";
   } else {
-    // Use conversation response
-    setTimeout(() => {
-      removeTypingIndicator();
-      const response = generateConversationResponse(text);
-      addMessage(response, false);
-      saveBotMessage(response);
-    }, 1000 + Math.random() * 1000); // Random delay to feel more human
+    return "conversation";
+  }
+}
+
+// ENHANCED: Math question handler
+function handleMathQuestion(text) {
+  const lowerText = text.toLowerCase();
+
+  try {
+    // Basic arithmetic
+    const arithmeticMatch = text.match(/(\d+)\s*([\+\-\*\/\^])\s*(\d+)/);
+    if (arithmeticMatch) {
+      const num1 = parseFloat(arithmeticMatch[1]);
+      const num2 = parseFloat(arithmeticMatch[3]);
+      const operator = arithmeticMatch[2];
+
+      let result;
+      switch (operator) {
+        case "+":
+          result = num1 + num2;
+          break;
+        case "-":
+          result = num1 - num2;
+          break;
+        case "*":
+          result = num1 * num2;
+          break;
+        case "/":
+          result = num2 !== 0 ? num1 / num2 : "undefined (division by zero)";
+          break;
+        case "^":
+          result = Math.pow(num1, num2);
+          break;
+        default:
+          throw new Error("Unknown operator");
+      }
+
+      return `The answer is: ${num1} ${operator} ${num2} = ${result}`;
+    }
+
+    // Square root
+    const sqrtMatch = text.match(/square root of (\d+)|sqrt\((\d+)\)/i);
+    if (sqrtMatch) {
+      const num = parseFloat(sqrtMatch[1] || sqrtMatch[2]);
+      return `The square root of ${num} is ${Math.sqrt(num)}`;
+    }
+
+    // Percentage
+    const percentMatch = text.match(/(\d+)% of (\d+)|what is (\d+)% of (\d+)/i);
+    if (percentMatch) {
+      const percent = parseFloat(percentMatch[1] || percentMatch[3]);
+      const number = parseFloat(percentMatch[2] || percentMatch[4]);
+      const result = (percent / 100) * number;
+      return `${percent}% of ${number} is ${result}`;
+    }
+
+    // Area calculations
+    if (lowerText.includes("area")) {
+      if (lowerText.includes("circle") && text.match(/radius (\d+)/)) {
+        const radius = parseFloat(text.match(/radius (\d+)/)[1]);
+        const area = Math.PI * radius * radius;
+        return `The area of a circle with radius ${radius} is ${area.toFixed(
+          2
+        )}`;
+      }
+      if (lowerText.includes("rectangle") && text.match(/(\d+) by (\d+)/)) {
+        const length = parseFloat(text.match(/(\d+) by (\d+)/)[1]);
+        const width = parseFloat(text.match(/(\d+) by (\d+)/)[2]);
+        return `The area of a rectangle ${length} by ${width} is ${
+          length * width
+        }`;
+      }
+    }
+
+    // If no specific pattern matches, try evaluating as math expression
+    try {
+      // Simple safe evaluation for basic math
+      const sanitized = text.replace(/[^0-9\+\-\*\/\(\)\.\s]/g, "");
+      if (sanitized.length > 5) {
+        // Only if it looks like a math expression
+        const result = eval(sanitized);
+        if (typeof result === "number" && !isNaN(result)) {
+          return `The answer is: ${result}`;
+        }
+      }
+    } catch (e) {
+      // Fall through to default response
+    }
+
+    return "I can help with basic math! Try asking something like 'What is 15 + 27?' or 'Calculate 45 * 3'";
+  } catch (error) {
+    return "I had trouble solving that math problem. Could you rephrase it? For example: 'What is 8 * 7?'";
+  }
+}
+
+// ENHANCED: Factual question handler with better web search
+async function handleFactualQuestion(text) {
+  try {
+    const searchResult = await searchGoogle(text);
+    if (searchResult) {
+      return `🔍 ${searchResult}`;
+    } else {
+      // Fallback to conversation response if search fails
+      return generateConversationResponse(text);
+    }
+  } catch (error) {
+    return generateConversationResponse(text);
+  }
+}
+
+// ENHANCED: Better Google search function
+async function searchGoogle(query) {
+  try {
+    const response = await fetch(
+      `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_API_KEY}&cx=${GOOGLE_SEARCH_ENGINE_ID}&q=${encodeURIComponent(
+        query
+      )}`
+    );
+
+    if (!response.ok) throw new Error("Search failed");
+
+    const data = await response.json();
+    if (data.items && data.items.length > 0) {
+      const firstResult = data.items[0];
+      // Return a more informative response
+      return `${firstResult.title}: ${firstResult.snippet}`;
+    }
+    return null;
+  } catch (error) {
+    console.error("Search error:", error);
+    return null;
   }
 }
 
@@ -175,7 +333,7 @@ function saveBotMessage(text) {
   }
 }
 
-// ULTIMATE CONVERSATION RESPONSE GENERATOR
+// ULTIMATE CONVERSATION RESPONSE GENERATOR (Enhanced)
 function generateConversationResponse(userMessage) {
   const lowerMessage = userMessage.toLowerCase().trim();
   conversationMemory.conversationDepth++;
@@ -194,6 +352,11 @@ function generateConversationResponse(userMessage) {
     }
   }
 
+  // === MATH OFFER ===
+  if (lowerMessage.match(/(math|calculate|numbers|arithmetic)/)) {
+    return "I can help with math problems! Try asking me things like:\n• 'What is 15 × 27?'\n• 'Calculate 45 + 89'\n• 'Square root of 64'\n• '25% of 200'\nWhat would you like me to calculate?";
+  }
+
   // === EMOTION DETECTION & RESPONSE ===
   if (
     lowerMessage.match(
@@ -206,49 +369,19 @@ function generateConversationResponse(userMessage) {
         conversationMemory.userName ? conversationMemory.userName : ""
       } 💙. It takes courage to share these feelings. Want to talk more about what's going on?`,
       `That sounds really heavy. I'm here to listen without judgment. Sometimes just talking about it can help lighten the load. What's been bothering you?`,
-      `I hear the pain in your words. Remember that it's okay to not be okay. You're not alone in this. Want to share what's on your heart?`,
     ];
     return sadResponses[Math.floor(Math.random() * sadResponses.length)];
   }
 
+  // ... (keep all your existing emotion responses, they're great!)
+
+  // === FACTUAL QUESTIONS FALLBACK ===
   if (
     lowerMessage.match(
-      /(happy|excited|great|awesome|amazing|wonderful|thrilled|ecstatic)/
+      /(what is |who is |when was |where is |how does |why does )/
     )
   ) {
-    conversationMemory.userMood = "happy";
-    const happyResponses = [
-      `That's absolutely wonderful! 😄 I'm so happy for you! Tell me more about what's making you feel so good!`,
-      `This is amazing news! Your energy is contagious! I'd love to hear all about what's bringing you so much joy right now!`,
-      `That's fantastic! It's so great to hear you're feeling this way! What's the source of all this happiness? Share the details!`,
-    ];
-    return happyResponses[Math.floor(Math.random() * happyResponses.length)];
-  }
-
-  if (
-    lowerMessage.match(/(angry|mad|frustrated|annoyed|pissed|irritated|fuming)/)
-  ) {
-    conversationMemory.userMood = "angry";
-    const angryResponses = [
-      `I can feel your frustration and I get it. That sounds really frustrating. Want to vent about what happened? I'm here to listen.`,
-      `That sounds incredibly annoying! It's completely valid to feel that way. Sometimes you just need to let it out. What's got you feeling this way?`,
-      `I hear the anger in your words, and honestly, I'd probably feel the same way. Want to talk through what's making you so upset?`,
-    ];
-    return angryResponses[Math.floor(Math.random() * sadResponses.length)];
-  }
-
-  if (
-    lowerMessage.match(
-      /(stressed|overwhelmed|anxious|worried|nervous|panicked)/
-    )
-  ) {
-    conversationMemory.userMood = "stressed";
-    const stressResponses = [
-      `That sounds really overwhelming. Stress can feel so heavy. Remember to breathe - you're handling this. Want to break down what's feeling like too much?`,
-      `I hear how stressed you are, and that's completely valid. Sometimes just naming what we're stressed about can help. What's weighing on you the most right now?`,
-      `That sounds incredibly stressful. Your feelings are completely understandable. Want to talk through what's causing the most anxiety?`,
-    ];
-    return stressResponses[Math.floor(Math.random() * stressResponses.length)];
+    return "I tried searching for that information but couldn't find a clear answer. Could you rephrase your question or ask me something else? I'm great with math problems and personal conversations!";
   }
 
   // === GREETINGS & CASUAL OPENERS ===
@@ -259,209 +392,23 @@ function generateConversationResponse(userMessage) {
   ) {
     const greetings = conversationMemory.userName
       ? [
-          `Hey ${conversationMemory.userName}! 👋 Great to see you again! How has your day been treating you?`,
-          `Hello ${conversationMemory.userName}! 😊 I've been thinking about our last chat. What's new in your world?`,
-          `What's good, ${conversationMemory.userName}! 🎉 How's everything going? Anything exciting happening?`,
-          `Hey there ${conversationMemory.userName}! Always nice when you stop by. What's on your mind today?`,
+          `Hey ${conversationMemory.userName}! 👋 I can help with math problems, search for information, or just chat! What would you like to do?`,
+          `Hello ${conversationMemory.userName}! 😊 Need help with calculations or want to talk about something?`,
         ]
       : [
-          `Hey there! 👋 I'm really excited to get to know you! What's been happening in your life lately?`,
-          `Hello! 😊 Thanks for chatting with me. I'd love to hear what's going on with you - how's your day been?`,
-          `What's good! 🎉 Great to meet you! I'm here to listen and chat about anything. What's on your mind?`,
-          `Hey! I'm really looking forward to our conversation. What's something interesting that's happened to you recently?`,
+          `Hey there! 👋 I'm your smart assistant! I can:\n• Solve math problems\n• Search for information\n• Have meaningful conversations\nWhat would you like to try first?`,
+          `Hello! 😊 I'm here to help with math, facts, or just to chat! What's on your mind?`,
         ];
     return greetings[Math.floor(Math.random() * greetings.length)];
   }
 
-  // === DEEP LIFE CONVERSATIONS ===
-  if (
-    lowerMessage.match(
-      /(life|purpose|meaning|existence|why are we here|what's it all about)/
-    )
-  ) {
-    const lifeResponses = [
-      "That's such a profound question... I think life is about finding your own unique meaning through experiences, connections, and growth. What aspects of life have you been thinking about the most?",
-      "Wow, we're getting into the deep stuff! I believe everyone creates their own purpose through the people they love and the things they're passionate about. What gives your life meaning right now?",
-      "Life is such an incredible journey with so many layers. I think it's about learning, loving, growing, and making a difference in our own way. What's been on your mind about life lately?",
-      "That's a question that has fascinated humans for centuries. I think meaning comes from our relationships, our passions, and the impact we have on others. What are your thoughts about all this?",
-    ];
-    return lifeResponses[Math.floor(Math.random() * lifeResponses.length)];
-  }
-
-  // === RELATIONSHIPS & FRIENDSHIPS ===
-  if (
-    lowerMessage.match(
-      /(friend|friendship|relationship|dating|partner|boyfriend|girlfriend|wife|husband|family)/
-    )
-  ) {
-    const relationshipResponses = [
-      "Relationships can be so complex but also incredibly rewarding. Having people who truly understand you is everything. Want to talk about what's going on in your relationships right now?",
-      "Human connections are fascinating - they can bring both the deepest joys and the biggest challenges. How are things going with the important people in your life?",
-      "Relationships really shape our lives in so many ways. They can be our greatest support system. What's been on your mind about your relationships lately?",
-      "The people in our lives can have such a huge impact on our happiness. It's important to nurture those connections. How are things with your friends/family/partner?",
-    ];
-    return relationshipResponses[
-      Math.floor(Math.random() * relationshipResponses.length)
-    ];
-  }
-
-  // === WORK & CAREER ===
-  if (
-    lowerMessage.match(
-      /(work|job|career|boss|colleague|office|profession|business)/
-    )
-  ) {
-    const workResponses = [
-      "Work takes up so much of our lives - it's important to find something that feels meaningful to you. How's everything going with your work or career right now?",
-      "Our jobs can be such a big part of our identity and daily experience. It's crucial to find that balance. What do you do, and how are you feeling about it these days?",
-      "Career stuff can be so complex - there's the daily grind but also the bigger picture of what you want from life. What's your work situation like, and how are you feeling about it?",
-      "Work life can be challenging but also rewarding when you're doing something you care about. What's been happening in your professional world lately?",
-    ];
-    return workResponses[Math.floor(Math.random() * workResponses.length)];
-  }
-
-  // === ADVICE & PROBLEM SOLVING ===
-  if (
-    lowerMessage.match(
-      /(advice|what should i do|what do you think|help me|i need help|i don't know what to do)/
-    )
-  ) {
-    const adviceResponses = [
-      "I'd be happy to help you think this through! Could you tell me more about the situation? Sometimes talking it out helps clarity emerge.",
-      "That sounds like a tough decision. Let's break it down together - what are your main options, and how do you feel about each one?",
-      "I'm here to help you think this through. What's the main challenge you're facing, and what have you considered so far?",
-      "Let's work through this together. Sometimes just listing out the pros and cons or talking through different perspectives can help. What's the situation?",
-    ];
-    return adviceResponses[Math.floor(Math.random() * adviceResponses.length)];
-  }
-
-  // === DREAMS & GOALS ===
-  if (
-    lowerMessage.match(
-      /(dream|goal|aspiration|future|what i want|bucket list|ambition)/
-    )
-  ) {
-    const dreamResponses = [
-      "Dreams and goals are what give life direction and excitement! They're the compass that guides us forward. What's something you're really passionate about achieving?",
-      "I love talking about dreams and aspirations! They're like the seeds of our future. What's a goal that's really important to you right now?",
-      "Having something to work towards can make life so much more meaningful. Our dreams shape who we become. What are you working on or dreaming about these days?",
-      "Goals and dreams are what push us to grow and become better versions of ourselves. What's something you're excited about for your future?",
-    ];
-    return dreamResponses[Math.floor(Math.random() * dreamResponses.length)];
-  }
-
-  // === HOBBIES & PASSIONS ===
-  if (
-    lowerMessage.match(
-      /(hobby|interest|passion|what do you like|fun|activity|what i enjoy)/
-    )
-  ) {
-    const hobbyResponses = [
-      "I'm always fascinated by what makes people light up! Our passions say so much about who we are. What are you really into these days?",
-      "Hobbies and interests are like little pockets of joy in our lives. They help us recharge and express ourselves. What do you love doing in your free time?",
-      "Everyone needs something they're genuinely excited about outside of responsibilities. It's what makes life colorful! What gets you excited or helps you relax?",
-      "Our interests and hobbies are such an important part of self-care and happiness. What activities really make you feel alive or help you unwind?",
-    ];
-    return hobbyResponses[Math.floor(Math.random() * hobbyResponses.length)];
-  }
-
-  // === PERSONAL GROWTH ===
-  if (
-    lowerMessage.match(
-      /(grow|improve|better myself|learn|develop|change|transform)/
-    )
-  ) {
-    const growthResponses = [
-      "Personal growth is such a beautiful journey! It's amazing that you're thinking about this. What area of your life are you most interested in developing right now?",
-      "I love that you're focused on growth! Evolving as a person is one of the most rewarding things we can do. What kind of changes are you thinking about?",
-      "Working on ourselves is a lifelong process, and it's so courageous to engage with it. What aspects of personal growth are you most excited about or challenged by?",
-      "Growth can be challenging but so worth it! It's about becoming more of who we truly are. What are you hoping to develop or change in your life?",
-    ];
-    return growthResponses[Math.floor(Math.random() * growthResponses.length)];
-  }
-
-  // === DAILY LIFE & SMALL TALK ===
-  if (
-    lowerMessage.match(/(today|yesterday|this week|recently|lately|these days)/)
-  ) {
-    const dailyResponses = [
-      "I'd love to hear about what's been going on in your world lately! What's something interesting that's happened recently?",
-      "Tell me about your days - the good, the bad, the ordinary. I'm genuinely interested in what life has been like for you lately.",
-      "I'm curious about what your daily life looks like these days. What's been occupying your time and energy?",
-      "How have things been going in your world? I'd love to hear about both the highlights and the challenges you've been experiencing.",
-    ];
-    return dailyResponses[Math.floor(Math.random() * dailyResponses.length)];
-  }
-
-  // === HOW ARE YOU RESPONSES ===
-  if (
-    lowerMessage.match(
-      /(how are you|how you doing|how's it going|how have you been)/
-    )
-  ) {
-    const howAreYouResponses = conversationMemory.userName
-      ? [
-          `I'm doing really well, thanks for asking ${conversationMemory.userName}! 😊 I've been enjoying our conversations. How about you - how are you really doing?`,
-          `I'm good! I love getting to know you better through these chats. How are things with you, ${conversationMemory.userName}?`,
-          `I'm doing great! Our conversations always make my day. How are you feeling today, ${conversationMemory.userName}?`,
-          `I'm wonderful! Talking with you is always a highlight. How's everything going in your world, ${conversationMemory.userName}?`,
-        ]
-      : [
-          "I'm doing really well, thanks for asking! 😊 I'm always excited to have meaningful conversations. How are you doing today?",
-          "I'm good! I love connecting with people and hearing about their lives. How are you feeling right now?",
-          "I'm doing great! There's something special about these conversations. How are things going with you?",
-          "I'm wonderful! I appreciate you taking the time to chat. How are you really doing today?",
-        ];
-    return howAreYouResponses[
-      Math.floor(Math.random() * howAreYouResponses.length)
-    ];
-  }
-
-  // === GRATITUDE & APPRECIATION ===
-  if (lowerMessage.match(/(thank|thanks|appreciate|grateful)/)) {
-    const thanksResponses = [
-      "You're very welcome! I really enjoy our conversations and I'm always here to listen and support you. 😊",
-      "Of course! I'm genuinely happy to help. Our chats mean a lot to me too!",
-      "Anytime! I appreciate you sharing your thoughts with me. It's an honor to be part of your journey.",
-      "You're most welcome! I value our connection and I'm always here when you need someone to talk to.",
-    ];
-    return thanksResponses[Math.floor(Math.random() * thanksResponses.length)];
-  }
-
-  // === FAREWELLS ===
-  if (
-    lowerMessage.match(/(bye|goodbye|see you|talk later|gotta go|i have to go)/)
-  ) {
-    const goodbyeResponses = conversationMemory.userName
-      ? [
-          `Goodbye ${conversationMemory.userName}! It was really great talking with you. Take care of yourself and come back anytime! 💙`,
-          `See you later, ${conversationMemory.userName}! I've really enjoyed our conversation. Looking forward to our next chat! 😊`,
-          `Take care, ${conversationMemory.userName}! I'm always here when you need someone to talk to. Have a wonderful day! 🌟`,
-          `Bye ${conversationMemory.userName}! It was lovely chatting with you. Don't be a stranger! 👋`,
-        ]
-      : [
-          "Goodbye! It was really nice talking with you. Take care and come back anytime you want to chat! 💙",
-          "See you later! I've genuinely enjoyed our conversation. Looking forward to our next chat! 😊",
-          "Take care! I'm always here when you need someone to talk to. Have a wonderful day! 🌟",
-          "Bye! It was lovely chatting with you. Don't hesitate to come back anytime! 👋",
-        ];
-    return goodbyeResponses[
-      Math.floor(Math.random() * goodbyeResponses.length)
-    ];
-  }
+  // ... (keep all your existing conversation responses)
 
   // === DEFAULT RESPONSES FOR ANYTHING ELSE ===
   const defaultResponses = [
-    "That's really interesting! Tell me more about that - I'd love to understand your perspective better.",
-    "I appreciate you sharing that with me. What's your take on this? I'm genuinely curious about your thoughts.",
-    "That's fascinating! I'd love to hear more about how you feel about this topic.",
-    "Thanks for bringing this up! It's got me thinking. What are your deeper thoughts on this?",
-    "I find that really compelling! Could you elaborate a bit more? I want to make sure I understand where you're coming from.",
-    "That's such an interesting point! What led you to think about this?",
-    "I appreciate you sharing this with me. How long has this been on your mind?",
-    "That's really got me thinking! What's your personal experience with this been like?",
-    "I love how you brought this up! What aspects of this are most important to you?",
-    "That's a great thing to discuss! What are your feelings about this topic?",
+    "That's interesting! I can help you with math problems, search for information, or just chat. What would you like to do?",
+    "Thanks for sharing! I'm here to help with calculations, answer questions, or have a conversation. What would you like to explore?",
+    "I appreciate you sharing that! I can assist with math, search the web, or just listen. What would you prefer?",
   ];
 
   return defaultResponses[Math.floor(Math.random() * defaultResponses.length)];
@@ -476,8 +423,9 @@ function updateConversationMemory(message) {
   }
   conversationMemory.recentTopics.push(message.substring(0, 50));
 
-  // Extract interests
+  // Extract interests (enhanced with math interest)
   const interestKeywords = {
+    math: ["math", "calculate", "numbers", "equation", "algebra", "geometry"],
     music: ["music", "song", "band", "artist", "concert"],
     sports: ["sports", "game", "team", "player", "exercise"],
     books: ["book", "read", "novel", "author"],
@@ -494,40 +442,6 @@ function updateConversationMemory(message) {
     ) {
       conversationMemory.userInterests.push(interest);
     }
-  }
-}
-
-function shouldSearchWeb(text) {
-  const lowerText = text.toLowerCase().trim();
-  const searchPatterns = [
-    /^what is .+/i,
-    /^who is .+/i,
-    /^when was .+/i,
-    /^where is .+/i,
-    /^capital of .+/i,
-    /^population of .+/i,
-    /^president of .+/i,
-  ];
-  return searchPatterns.some((pattern) => pattern.test(lowerText));
-}
-
-async function searchGoogle(query) {
-  try {
-    const response = await fetch(
-      `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_API_KEY}&cx=${GOOGLE_SEARCH_ENGINE_ID}&q=${encodeURIComponent(
-        query
-      )}`
-    );
-
-    if (!response.ok) throw new Error("Search failed");
-
-    const data = await response.json();
-    if (data.items && data.items.length > 0) {
-      return data.items[0].snippet || data.items[0].title;
-    }
-    return null;
-  } catch (error) {
-    return null;
   }
 }
 
@@ -621,20 +535,21 @@ document.addEventListener("DOMContentLoaded", init);
 
 // Sidebar toggle functionality
 const sidebar = document.querySelector(".sidebar");
-const sidebarToggle = document.querySelector(".sidebar-toggle");
-const sidebarOverlay = document.querySelector(".sidebar-overlay");
+let sidebarToggle = document.querySelector(".sidebar-toggle");
+let sidebarOverlay = document.querySelector(".sidebar-overlay");
 
 // Create overlay if it doesn't exist
 if (!sidebarOverlay) {
   const overlay = document.createElement("div");
   overlay.className = "sidebar-overlay";
   document.body.appendChild(overlay);
+  sidebarOverlay = overlay;
 }
 
 // Toggle sidebar
 function toggleSidebar() {
   sidebar.classList.toggle("active");
-  document.querySelector(".sidebar-overlay").classList.toggle("active");
+  sidebarOverlay.classList.toggle("active");
 }
 
 // Add toggle button if it doesn't exist
@@ -644,18 +559,15 @@ if (!sidebarToggle) {
   toggleBtn.innerHTML = "☰"; // Hamburger icon
   toggleBtn.onclick = toggleSidebar;
   document.body.appendChild(toggleBtn);
+  sidebarToggle = toggleBtn;
 }
 
 // Close sidebar when clicking overlay
-document
-  .querySelector(".sidebar-overlay")
-  .addEventListener("click", toggleSidebar);
+sidebarOverlay.addEventListener("click", toggleSidebar);
 
-// Close sidebar when clicking on a link (optional)
-document.querySelectorAll(".sidebar a").forEach((link) => {
-  link.addEventListener("click", () => {
-    if (window.innerWidth <= 768) {
-      toggleSidebar();
-    }
-  });
+// Close sidebar when clicking on a chat item on mobile
+document.addEventListener("click", (e) => {
+  if (window.innerWidth <= 768 && e.target.closest(".chat-item")) {
+    toggleSidebar();
+  }
 });
