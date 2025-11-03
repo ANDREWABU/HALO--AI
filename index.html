@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SOLE AI</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <h2>Chats</h2>
+      </div>
+      <button class="new-chat-btn" id="newChatBtn">
+        <span>+ New Chat</span>
+      </button>
+      <div class="chat-history">
+        <h3>Recent Chats</h3>
+        <div class="chat-list" id="chatList"></div>
+      </div>
+    </div>
+    <div class="chat-container">
+      <div class="chat-header">
+        <h1>HALO AI</h1>
+        <p>What's on your mind today?</p>
+      </div>
+
+      <div class="chat-window" id="chatWindow">
+        <!-- Messages will be dynamically added here -->
+        <div class="welcome-message">HOW CAN I HELP YOU TODAY?</div>
+      </div>
+
+      <div class="input-area">
+        <div class="input-row">
+          <input type="text" id="user-input" placeholder="Type a message..." />
+          <button id="send-btn">Send</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+      <!-- Your chat messages and input area here -->
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
