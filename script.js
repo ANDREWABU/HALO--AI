@@ -126,13 +126,13 @@ async function sendMessage() {
   try {
     let response;
 
-    // First, try to handle with API search for factual questions
-    if (shouldUseAPI(text)) {
-      response = await handleWithAPI(text);
-    }
-    // Then try math
-    else if (isMathQuestion(text)) {
+    // Check if it's a math question FIRST
+    if (isMathQuestion(text)) {
       response = handleMathQuestion(text);
+    }
+    // Then check if it's a factual question for API
+    else if (shouldUseAPI(text)) {
+      response = await handleWithAPI(text);
     }
     // Finally, use conversation
     else {
@@ -179,19 +179,32 @@ function shouldUseAPI(text) {
   return apiPatterns.some((pattern) => pattern.test(lowerText));
 }
 
-// Determine if it's a math question
+// Determine if it's a math question - IMPROVED
 function isMathQuestion(text) {
-  const lowerText = text.toLowerCase();
+  const lowerText = text.toLowerCase().trim();
 
+  // More specific math patterns to avoid false positives
   const mathPatterns = [
-    /\d+\s*[\+\-\*\/\^]\s*\d+/,
-    /^calculate|^solve |^what is \d+ [\+\-\*\/] \d+/i,
-    /^square root|^sqrt\(|^percentage|^\d+% of/i,
-    /^area of|^volume of|^perimeter of/i,
-    /^math|^equation|^formula/i,
+    /^\d+\s*[\+\-\*\/\^]\s*\d+$/, // Only numbers and operators
+    /^calculate\s+\d+/i,
+    /^solve\s+\d+/i,
+    /^what is \d+\s*[\+\-\*\/]\s*\d+\??$/i, // Specific "what is X + Y" format
+    /^square root of \d+/i,
+    /^sqrt\(\d+\)$/i,
+    /^\d+% of \d+$/i,
+    /^area of/i,
+    /^volume of/i,
+    /^perimeter of/i,
+    /^\d+\s*(?:\^|to the power of|raised to)\s*\d+$/i,
   ];
 
-  return mathPatterns.some((pattern) => pattern.test(lowerText));
+  // Also check if it's a simple arithmetic expression
+  const simpleMath =
+    /^[\d\s\+\-\*\/\^\.\(\)]+$/.test(text) &&
+    /\d/.test(text) &&
+    /[\+\-\*\/\^]/.test(text);
+
+  return mathPatterns.some((pattern) => pattern.test(lowerText)) || simpleMath;
 }
 
 // Handle question with API
@@ -199,13 +212,14 @@ async function handleWithAPI(text) {
   try {
     const searchResult = await searchGoogle(text);
     if (searchResult && searchResult.length > 20) {
-      return searchResult;
+      const followUps = getFollowUpSuggestions(text);
+      return searchResult + "\n\n" + "💡 " + followUps[0];
     } else {
       // Fallback to common knowledge or conversation
-      return handleCommonQuestions(text) || generateConversationResponse(text);
+      return handleCommonQuestions(text) || smartFallback(text);
     }
   } catch (error) {
-    return handleCommonQuestions(text) || generateConversationResponse(text);
+    return handleCommonQuestions(text) || smartFallback(text);
   }
 }
 
@@ -268,14 +282,17 @@ function handleCommonQuestions(text) {
   return null;
 }
 
-// ENHANCED: Math question handler
+// ENHANCED: Math question handler - SIMPLIFIED
 function handleMathQuestion(text) {
-  const lowerText = text.toLowerCase();
+  const lowerText = text.toLowerCase().trim();
 
   try {
-    // Basic arithmetic
-    const arithmeticMatch = text.match(
-      /(\d+\.?\d*)\s*([\+\-\*\/\^])\s*(\d+\.?\d*)/
+    // Clean the text for evaluation
+    const cleanText = text.replace(/\?/g, "").trim();
+
+    // Basic arithmetic - most common case
+    const arithmeticMatch = cleanText.match(
+      /^(\d+\.?\d*)\s*([\+\-\*\/\^])\s*(\d+\.?\d*)$/
     );
     if (arithmeticMatch) {
       const num1 = parseFloat(arithmeticMatch[1]);
@@ -303,7 +320,40 @@ function handleMathQuestion(text) {
           throw new Error("Unknown operator");
       }
 
-      return `The answer is: ${num1} ${operator} ${num2} = ${result}`;
+      return `${num1} ${operator} ${num2} = ${result}`;
+    }
+
+    // Handle "what is X + Y" format
+    const whatIsMatch = cleanText.match(
+      /^what is (\d+\.?\d*)\s*([\+\-\*\/\^])\s*(\d+\.?\d*)$/i
+    );
+    if (whatIsMatch) {
+      const num1 = parseFloat(whatIsMatch[1]);
+      const num2 = parseFloat(whatIsMatch[3]);
+      const operator = whatIsMatch[2];
+
+      let result;
+      switch (operator) {
+        case "+":
+          result = num1 + num2;
+          break;
+        case "-":
+          result = num1 - num2;
+          break;
+        case "*":
+          result = num1 * num2;
+          break;
+        case "/":
+          result = num2 !== 0 ? num1 / num2 : "undefined (division by zero)";
+          break;
+        case "^":
+          result = Math.pow(num1, num2);
+          break;
+        default:
+          throw new Error("Unknown operator");
+      }
+
+      return `${num1} ${operator} ${num2} = ${result}`;
     }
 
     // Square root
@@ -313,9 +363,9 @@ function handleMathQuestion(text) {
     if (sqrtMatch) {
       const num = parseFloat(sqrtMatch[1] || sqrtMatch[2]);
       if (num >= 0) {
-        return `The square root of ${num} is ${Math.sqrt(num)}`;
+        return `√${num} = ${Math.sqrt(num)}`;
       } else {
-        return `The square root of ${num} is not a real number (imaginary number)`;
+        return `√${num} is not a real number`;
       }
     }
 
@@ -327,32 +377,60 @@ function handleMathQuestion(text) {
       const percent = parseFloat(percentMatch[1] || percentMatch[3]);
       const number = parseFloat(percentMatch[2] || percentMatch[4]);
       const result = (percent / 100) * number;
-      return `${percent}% of ${number} is ${result}`;
+      return `${percent}% of ${number} = ${result}`;
     }
 
-    // Power/exponent
-    const powerMatch = text.match(
-      /(\d+\.?\d*)\s*(?:\^|to the power of|raised to)\s*(\d+\.?\d*)/i
-    );
-    if (powerMatch) {
-      const base = parseFloat(powerMatch[1]);
-      const exponent = parseFloat(powerMatch[2]);
-      const result = Math.pow(base, exponent);
-      return `${base}^${exponent} = ${result}`;
+    // If it's a simple math expression, try to evaluate it
+    const simpleExpression = cleanText.match(/^[\d\s\+\-\*\/\^\.\(\)]+$/);
+    if (
+      simpleExpression &&
+      /\d/.test(cleanText) &&
+      /[\+\-\*\/\^]/.test(cleanText)
+    ) {
+      try {
+        // Safe evaluation for simple math
+        const result = eval(cleanText);
+        if (typeof result === "number" && !isNaN(result)) {
+          return `${cleanText} = ${result}`;
+        }
+      } catch (e) {
+        // If eval fails, fall through
+      }
     }
 
-    return "I can help with basic math! Try asking something like:\n• '15 + 27'\n• 'Square root of 64'\n• '25% of 200'\n• '2 to the power of 8'";
+    return "I can help with basic math! Try asking something like:\n• '15 + 27'\n• 'Square root of 64'\n• '25% of 200'";
   } catch (error) {
     return "I had trouble solving that math problem. Could you rephrase it?";
   }
 }
 
-// ENHANCED: Better Google search function
+// ENHANCED: Better Google search function with top 3 results, context, and summary
 async function searchGoogle(query) {
   try {
+    // Don't search for simple math questions
+    if (isMathQuestion(query)) {
+      return null;
+    }
+
+    // Enrich query with context from conversationMemory
+    let enrichedQuery = query;
+    if (conversationMemory.userInterests.length > 0) {
+      enrichedQuery += " " + conversationMemory.userInterests.join(" ");
+    }
+    if (
+      conversationMemory.locationContext &&
+      conversationMemory.locationContext.lastLocation
+    ) {
+      enrichedQuery += " " + conversationMemory.locationContext.lastLocation;
+    }
+    if (conversationMemory.recentTopics.length > 0) {
+      enrichedQuery +=
+        " " + conversationMemory.recentTopics.slice(-2).join(" ");
+    }
+
     const response = await fetch(
       `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_API_KEY}&cx=${GOOGLE_SEARCH_ENGINE_ID}&q=${encodeURIComponent(
-        query
+        enrichedQuery
       )}`
     );
 
@@ -360,25 +438,24 @@ async function searchGoogle(query) {
 
     const data = await response.json();
     if (data.items && data.items.length > 0) {
-      const firstResult = data.items[0];
-
-      // Clean up the response
-      let cleanSnippet = firstResult.snippet
-        .replace(/Wikipedia/g, "")
-        .replace(/\[\d+\]/g, "")
-        .replace(/\.\.\./g, ".")
-        .replace(/\s+/g, " ")
-        .trim();
-
-      const cleanTitle = firstResult.title
-        .replace(/ - Wikipedia$/, "")
-        .replace(/\(Wikipedia\)/, "")
-        .trim();
-
-      // Only return if we have meaningful content
-      if (cleanSnippet.length > 20) {
-        return `${cleanTitle}: ${cleanSnippet}`;
-      }
+      // Summarize top 3 results
+      let summary = data.items
+        .slice(0, 3)
+        .map((item, idx) => {
+          let cleanSnippet = item.snippet
+            .replace(/Wikipedia/g, "")
+            .replace(/\[\d+\]/g, "")
+            .replace(/\.\.\./g, ".")
+            .replace(/\s+/g, " ")
+            .trim();
+          const cleanTitle = item.title
+            .replace(/ - Wikipedia$/, "")
+            .replace(/\(Wikipedia\)/, "")
+            .trim();
+          return `${idx + 1}. ${cleanTitle}: ${cleanSnippet}`;
+        })
+        .join("\n\n");
+      return summary;
     }
     return null;
   } catch (error) {
@@ -398,9 +475,56 @@ function saveBotMessage(text) {
   }
 }
 
-// IMPROVED CONVERSATION RESPONSE GENERATOR
+// Add follow-up suggestions after answers
+function getFollowUpSuggestions(userMessage) {
+  const suggestions = [];
+  if (shouldUseAPI(userMessage)) {
+    suggestions.push("Would you like to know more details or related facts?");
+  }
+  if (isMathQuestion(userMessage)) {
+    suggestions.push("Try another math problem or ask for an explanation.");
+  }
+  if (userMessage.toLowerCase().includes("news")) {
+    suggestions.push(
+      "Ask about a specific topic in the news or request world news."
+    );
+  }
+  if (conversationMemory.userInterests.length > 0) {
+    suggestions.push(
+      `Want to know more about ${conversationMemory.userInterests[0]}?`
+    );
+  }
+  if (suggestions.length === 0) {
+    suggestions.push("Is there anything else you'd like to ask?");
+  }
+  return suggestions;
+}
+
+// Smarter fallback for unknowns
+function smartFallback(userMessage) {
+  const related = conversationMemory.recentTopics
+    .filter((t) => t !== userMessage)
+    .slice(-2);
+  let msg = "I'm not sure about that. ";
+  if (related.length > 0) {
+    msg += `Earlier you mentioned: ${related.join(
+      ", "
+    )}. Want to continue on those topics?`;
+  } else {
+    msg += "Could you rephrase or ask about something else?";
+  }
+  return msg;
+}
+
+// SIMPLIFIED CONVERSATION RESPONSE GENERATOR
 function generateConversationResponse(userMessage) {
   const lowerMessage = userMessage.toLowerCase().trim();
+
+  // Don't respond to math questions in conversation mode
+  if (isMathQuestion(userMessage)) {
+    return handleMathQuestion(userMessage);
+  }
+
   conversationMemory.conversationDepth++;
 
   // Update conversation memory with new information
@@ -469,7 +593,6 @@ function generateConversationResponse(userMessage) {
     "I'd be happy to help with that! Could you tell me more?",
     "That's interesting! What would you like to know about this?",
     "I can help answer questions, solve math problems, or just chat. What would you prefer?",
-    "Tell me more about what you're looking for!",
   ];
 
   return defaultResponses[Math.floor(Math.random() * defaultResponses.length)];
@@ -602,7 +725,6 @@ if (!sidebarToggle) {
   sidebarToggle = toggleBtn;
 }
 
-// Close sidebar when clicking overlay
 sidebarOverlay.addEventListener("click", toggleSidebar);
 
 // Close sidebar when clicking on a chat item on mobile
