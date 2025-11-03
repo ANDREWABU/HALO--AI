@@ -40,9 +40,21 @@ function init() {
   }
 
   renderChatList();
+  setupEventListeners();
+}
 
-  sendBtn.addEventListener("click", sendMessage);
-  userInput.addEventListener("keypress", (e) => {
+function setupEventListeners() {
+  // Remove existing listeners to prevent duplicates
+  sendBtn.replaceWith(sendBtn.cloneNode(true));
+  userInput.replaceWith(userInput.cloneNode(true));
+
+  // Get fresh references
+  const freshSendBtn = document.getElementById("send-btn");
+  const freshUserInput = document.getElementById("user-input");
+
+  // Add event listeners
+  freshSendBtn.addEventListener("click", sendMessage);
+  freshUserInput.addEventListener("keypress", (e) => {
     if (e.key === "Enter") sendMessage();
   });
   newChatBtn.addEventListener("click", createNewChat);
@@ -74,7 +86,12 @@ function createNewChat() {
   saveChats();
   loadChat(currentChatId);
   renderChatList();
-  userInput.focus();
+
+  // Focus input after a short delay to ensure it's rendered
+  setTimeout(() => {
+    const input = document.getElementById("user-input");
+    if (input) input.focus();
+  }, 100);
 }
 
 function loadChat(chatId) {
@@ -83,18 +100,47 @@ function loadChat(chatId) {
   const chat = chats[chatId];
 
   chatWindow.innerHTML = "";
-  chat.messages.forEach((message) => {
-    addMessage(message.text, message.isUser);
-  });
+
+  if (chat.messages.length === 0) {
+    // Show welcome message for empty chat
+    const welcomeDiv = document.createElement("div");
+    welcomeDiv.className = "welcome-message";
+    welcomeDiv.textContent =
+      "Hello, welcome to HALO AI! How may I help you today?";
+    chatWindow.appendChild(welcomeDiv);
+  } else {
+    // Show existing messages
+    chat.messages.forEach((message) => {
+      addMessage(message.text, message.isUser);
+    });
+  }
 
   updateWelcomeMessage();
   scrollToBottom();
   updateActiveChat();
+
+  // Re-setup event listeners after loading chat
+  setTimeout(setupEventListeners, 0);
 }
 
 // Send a message
 async function sendMessage() {
-  const text = userInput.value.trim();
+  console.log("Send button clicked"); // Debug log
+
+  let inputField;
+  // Try to get input from main input area first, then from centered area
+  if (document.getElementById("user-input")) {
+    inputField = document.getElementById("user-input");
+  }
+
+  if (!inputField) {
+    console.error("Input field not found");
+    return;
+  }
+
+  const text = inputField.value.trim();
+  console.log("Input text:", text); // Debug log
+
   if (!text) return;
 
   // Add user message
@@ -116,7 +162,8 @@ async function sendMessage() {
     saveChats();
   }
 
-  userInput.value = "";
+  // Clear input field
+  inputField.value = "";
   updateWelcomeMessage();
   showTypingIndicator();
 
@@ -136,7 +183,7 @@ async function sendMessage() {
     }
     // Finally, use conversation
     else {
-      response = generateConversationResponse(text);
+      response = await generateConversationResponse(text);
     }
 
     // Add realistic typing delay
@@ -212,14 +259,13 @@ async function handleWithAPI(text) {
   try {
     const searchResult = await searchGoogle(text);
     if (searchResult && searchResult.length > 20) {
-      const followUps = getFollowUpSuggestions(text);
-      return searchResult + "\n\n" + "💡 " + followUps[0];
+      return searchResult;
     } else {
       // Fallback to common knowledge or conversation
-      return handleCommonQuestions(text) || smartFallback(text);
+      return handleCommonQuestions(text) || generateConversationResponse(text);
     }
   } catch (error) {
-    return handleCommonQuestions(text) || smartFallback(text);
+    return handleCommonQuestions(text) || generateConversationResponse(text);
   }
 }
 
@@ -404,7 +450,7 @@ function handleMathQuestion(text) {
   }
 }
 
-// ENHANCED: Better Google search function with top 3 results, context, and summary
+// ENHANCED: Better Google search function
 async function searchGoogle(query) {
   try {
     // Don't search for simple math questions
@@ -412,25 +458,9 @@ async function searchGoogle(query) {
       return null;
     }
 
-    // Enrich query with context from conversationMemory
-    let enrichedQuery = query;
-    if (conversationMemory.userInterests.length > 0) {
-      enrichedQuery += " " + conversationMemory.userInterests.join(" ");
-    }
-    if (
-      conversationMemory.locationContext &&
-      conversationMemory.locationContext.lastLocation
-    ) {
-      enrichedQuery += " " + conversationMemory.locationContext.lastLocation;
-    }
-    if (conversationMemory.recentTopics.length > 0) {
-      enrichedQuery +=
-        " " + conversationMemory.recentTopics.slice(-2).join(" ");
-    }
-
     const response = await fetch(
       `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_API_KEY}&cx=${GOOGLE_SEARCH_ENGINE_ID}&q=${encodeURIComponent(
-        enrichedQuery
+        query
       )}`
     );
 
@@ -438,24 +468,25 @@ async function searchGoogle(query) {
 
     const data = await response.json();
     if (data.items && data.items.length > 0) {
-      // Summarize top 3 results
-      let summary = data.items
-        .slice(0, 3)
-        .map((item, idx) => {
-          let cleanSnippet = item.snippet
-            .replace(/Wikipedia/g, "")
-            .replace(/\[\d+\]/g, "")
-            .replace(/\.\.\./g, ".")
-            .replace(/\s+/g, " ")
-            .trim();
-          const cleanTitle = item.title
-            .replace(/ - Wikipedia$/, "")
-            .replace(/\(Wikipedia\)/, "")
-            .trim();
-          return `${idx + 1}. ${cleanTitle}: ${cleanSnippet}`;
-        })
-        .join("\n\n");
-      return summary;
+      const firstResult = data.items[0];
+
+      // Clean up the response
+      let cleanSnippet = firstResult.snippet
+        .replace(/Wikipedia/g, "")
+        .replace(/\[\d+\]/g, "")
+        .replace(/\.\.\./g, ".")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      const cleanTitle = firstResult.title
+        .replace(/ - Wikipedia$/, "")
+        .replace(/\(Wikipedia\)/, "")
+        .trim();
+
+      // Only return if we have meaningful content
+      if (cleanSnippet.length > 20) {
+        return `${cleanTitle}: ${cleanSnippet}`;
+      }
     }
     return null;
   } catch (error) {
@@ -475,127 +506,120 @@ function saveBotMessage(text) {
   }
 }
 
-// Add follow-up suggestions after answers
-function getFollowUpSuggestions(userMessage) {
-  const suggestions = [];
-  if (shouldUseAPI(userMessage)) {
-    suggestions.push("Would you like to know more details or related facts?");
-  }
-  if (isMathQuestion(userMessage)) {
-    suggestions.push("Try another math problem or ask for an explanation.");
-  }
-  if (userMessage.toLowerCase().includes("news")) {
-    suggestions.push(
-      "Ask about a specific topic in the news or request world news."
-    );
-  }
-  if (conversationMemory.userInterests.length > 0) {
-    suggestions.push(
-      `Want to know more about ${conversationMemory.userInterests[0]}?`
-    );
-  }
-  if (suggestions.length === 0) {
-    suggestions.push("Is there anything else you'd like to ask?");
-  }
-  return suggestions;
-}
-
-// Smarter fallback for unknowns
-function smartFallback(userMessage) {
-  const related = conversationMemory.recentTopics
-    .filter((t) => t !== userMessage)
-    .slice(-2);
-  let msg = "I'm not sure about that. ";
-  if (related.length > 0) {
-    msg += `Earlier you mentioned: ${related.join(
-      ", "
-    )}. Want to continue on those topics?`;
-  } else {
-    msg += "Could you rephrase or ask about something else?";
-  }
-  return msg;
-}
-
-// SIMPLIFIED CONVERSATION RESPONSE GENERATOR
-function generateConversationResponse(userMessage) {
+// === ADVANCED CONVERSATION ENGINE WITH FOLLOW-UP, ALTERNATIVES, AND LIVE NEWS ===
+async function generateConversationResponse(userMessage) {
   const lowerMessage = userMessage.toLowerCase().trim();
-
-  // Don't respond to math questions in conversation mode
-  if (isMathQuestion(userMessage)) {
-    return handleMathQuestion(userMessage);
-  }
-
   conversationMemory.conversationDepth++;
-
-  // Update conversation memory with new information
   updateConversationMemory(userMessage);
 
-  // === PERSONAL INFORMATION EXTRACTION ===
+  // Extract name
   if (!conversationMemory.userName) {
-    const nameMatch = userMessage.match(
-      /(?:my name is|i'm|i am|call me) ([a-zA-Z]{2,})/i
-    );
+    const nameMatch = userMessage.match(/(?:my name is|i'm|i am|call me) ([a-zA-Z]{2,})/i);
     if (nameMatch) {
       conversationMemory.userName = nameMatch[1];
-      return `Nice to meet you, ${conversationMemory.userName}! 😊 What would you like to know or talk about?`;
+      return `Nice to meet you, ${conversationMemory.userName}! 😊 What would you like to talk about today?`;
     }
   }
 
-  // === EMOTION DETECTION & RESPONSE ===
-  if (
-    lowerMessage.match(
-      /(sad|depressed|down|upset|unhappy|miserable|heartbroken)/
-    )
-  ) {
-    conversationMemory.userMood = "sad";
-    return `I'm really sorry you're feeling this way. 💙 Want to talk about what's bothering you?`;
-  }
-
-  if (
-    lowerMessage.match(
-      /(happy|excited|great|awesome|amazing|wonderful|thrilled)/
-    )
-  ) {
-    conversationMemory.userMood = "happy";
-    return `That's wonderful! 😄 I'm happy for you! What's making you feel so good?`;
-  }
-
-  // === GREETINGS ===
-  if (lowerMessage.match(/^(hello|hi|hey|what's up|howdy)/)) {
-    if (conversationMemory.userName) {
-      return `Hey ${conversationMemory.userName}! 👋 What can I help you with today?`;
-    } else {
-      return `Hello! 👋 I can answer questions, help with math, or just chat. What would you like to know?`;
-    }
-  }
-
-  // === HOW ARE YOU ===
-  if (lowerMessage.match(/(how are you|how you doing|how's it going)/)) {
-    return "I'm doing great! Ready to help you with anything. How are you feeling?";
-  }
-
-  // === THANKS ===
-  if (lowerMessage.match(/(thank|thanks|appreciate)/)) {
-    return "You're welcome! 😊 Happy to help!";
-  }
-
-  // === GOODBYE ===
-  if (lowerMessage.match(/(bye|goodbye|see you|talk later)/)) {
-    if (conversationMemory.userName) {
-      return `Goodbye ${conversationMemory.userName}! 👋 Have a great day!`;
-    } else {
-      return "Goodbye! 👋 Take care!";
-    }
-  }
-
-  // === DEFAULT RESPONSES ===
-  const defaultResponses = [
-    "I'd be happy to help with that! Could you tell me more?",
-    "That's interesting! What would you like to know about this?",
-    "I can help answer questions, solve math problems, or just chat. What would you prefer?",
+  // Intent & entity extraction
+  const intents = [
+    { pattern: /(who are you|what are you|are you real|what can you do)/, response: () => `I'm HALO AI, your personal assistant. I can answer questions, help with research, chat, and more. What would you like to do?` },
+    { pattern: /(how are you|how's it going|how do you feel)/, response: () => `I'm just code, but I'm always ready to help! How are you feeling today?` },
+    { pattern: /(thank|thanks|appreciate)/, response: () => `You're welcome! 😊 If you have more questions, just ask!` },
+    { pattern: /(bye|goodbye|see you|talk later)/, response: () => conversationMemory.userName ? `Goodbye ${conversationMemory.userName}! 👋 Have a great day!` : `Goodbye! 👋 Take care!` },
+    { pattern: /(help|assist|support)/, response: () => `Of course! What do you need help with?` },
+    { pattern: /(joke|funny|make me laugh)/, response: () => `Why did the computer show up at work late? It had a hard drive! 😄 Want to hear another joke?` },
+    { pattern: /(news|current events|what's happening|headlines|latest news|world news)/, response: async () => {
+        const news = await getLiveNews();
+        return news || "Sorry, I couldn't fetch the latest news right now. Try again later or ask about a specific topic.";
+      }
+    },
+    { pattern: /(weather|temperature|forecast)/, response: () => `I can check the weather for you. Which city or location are you interested in?` },
+    { pattern: /(music|song|play|listen)/, response: () => `I can recommend music or find songs for you. What genre or artist do you like?` },
+    { pattern: /(movie|film|watch|recommend)/, response: () => `Looking for a movie recommendation? Tell me what genre or mood you're in!` },
+    { pattern: /(stress|sad|depressed|down|upset|unhappy|miserable|heartbroken)/, response: () => `I'm really sorry you're feeling this way. 💙 Want to talk about what's bothering you? Or would you like some tips to feel better?` },
+    { pattern: /(happy|excited|great|awesome|amazing|wonderful|thrilled)/, response: () => `That's wonderful! 😄 What's making you feel so good?` },
+    { pattern: /(bored|nothing to do)/, response: () => `Let's find something fun! Want a joke, a fun fact, or a music/movie suggestion?` },
   ];
+  for (const intent of intents) {
+    if (intent.pattern.test(lowerMessage)) {
+      const result = await intent.response();
+      // Suggest a follow-up or alternative
+      let followUp = '';
+      if (/news|current events|latest news|headlines/.test(lowerMessage)) {
+        followUp = "\n\nWould you like news about a specific topic or location?";
+      } else if (/joke/.test(lowerMessage)) {
+        followUp = "\n\nOr I can share a fun fact if you prefer!";
+      } else if (/weather/.test(lowerMessage)) {
+        followUp = "\n\nLet me know your city for a local forecast.";
+      } else if (/music|song/.test(lowerMessage)) {
+        followUp = "\n\nOr I can suggest a playlist!";
+      } else if (/movie|film/.test(lowerMessage)) {
+        followUp = "\n\nOr would you like a TV show suggestion?";
+      }
+      return result + followUp;
+    }
+  }
 
+  // Contextual follow-up: If user asked a vague question, ask for more details
+  if (/^(why|how|what|where|who|when)\b/.test(lowerMessage) && lowerMessage.split(' ').length < 5) {
+    return `Could you tell me a bit more so I can help you better? Or ask about something else!`;
+  }
+
+  // If user mentions a topic, remember it
+  const interestMatch = userMessage.match(/i (like|love|enjoy|am interested in) ([a-zA-Z\s]+)/i);
+  if (interestMatch) {
+    const interest = interestMatch[2].trim();
+    if (!conversationMemory.userInterests.includes(interest)) {
+      conversationMemory.userInterests.push(interest);
+    }
+    return `That's awesome! I'll remember that you like ${interest}. Want to talk more about it, or something else?`;
+  }
+
+  // If user asks for advice
+  if (/advice|suggest|recommend|should i/i.test(lowerMessage)) {
+    return `I'm happy to give advice! Can you tell me a bit more about your situation, or would you like a general tip?`;
+  }
+
+  // If user asks a follow-up, try to use recent topics
+  if (conversationMemory.recentTopics.length > 0 && /tell me more|more info|explain|details/i.test(lowerMessage)) {
+    const lastTopic = conversationMemory.recentTopics[conversationMemory.recentTopics.length - 1];
+    return `Sure! Here's more about: ${lastTopic}. Would you like to ask something else?`;
+  }
+
+  // If user says something unclear, ask for clarification
+  if (lowerMessage.length < 5 || /^(yes|no|maybe|ok|okay|sure)$/i.test(lowerMessage)) {
+    return `Could you clarify or tell me more? Or ask about something else!`;
+  }
+
+  // Default: friendly, open-ended response with alternative
+  const defaultResponses = [
+    `I'd be happy to help with that! Could you tell me more, or ask about something else?`,
+    `That's interesting! What would you like to know about this, or is there another topic?`,
+    `I can help answer questions, solve problems, or just chat. Want a news update or a fun fact?`,
+    `Let's talk! Ask me anything or tell me what's on your mind. Or I can suggest a topic!`
+  ];
   return defaultResponses[Math.floor(Math.random() * defaultResponses.length)];
+}
+
+// LIVE NEWS FETCHER (Google News via Custom Search)
+async function getLiveNews() {
+  try {
+    const response = await fetch(
+      `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_API_KEY}&cx=${GOOGLE_SEARCH_ENGINE_ID}&q=latest+news+2025`
+    );
+    if (!response.ok) throw new Error("News fetch failed");
+    const data = await response.json();
+    if (data.items && data.items.length > 0) {
+      return data.items.slice(0, 3).map((item, idx) => {
+        let cleanSnippet = item.snippet.replace(/\s+/g, ' ').trim();
+        return `${idx + 1}. ${item.title}: ${cleanSnippet}`;
+      }).join('\n\n');
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
 }
 
 function updateConversationMemory(message) {
@@ -668,10 +692,11 @@ function updateActiveChat() {
 }
 
 function updateWelcomeMessage() {
+  const welcomeMsg = document.querySelector(".welcome-message");
   if (chatWindow.children.length > 1) {
-    welcomeMessage.style.display = "none";
+    if (welcomeMsg) welcomeMsg.style.display = "none";
   } else {
-    welcomeMessage.style.display = "block";
+    if (welcomeMsg) welcomeMsg.style.display = "block";
   }
 }
 
