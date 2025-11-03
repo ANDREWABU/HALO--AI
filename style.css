@@ -196,6 +196,16 @@ body {
     color: white;
     font-size: 16px;
     outline: none;
+    position: relative;
+    z-index: 1;
+    box-shadow: none;
+    animation: none;
+}
+
+#user-input:focus {
+    box-shadow: none;
+    border: 1.5px solid #00e1ff;
+    animation: none;
 }
 
 #user-input::placeholder {
@@ -420,5 +430,97 @@ body {
 
     30% {
         transform: translateY(-5px);
+    }
+}
+
+/* Centered input area and welcome message for new chat */
+.centered-chat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    height: 60vh;
+    min-height: 350px;
+    width: 100%;
+    padding-top: 7vh;
+}
+
+.centered-chat .welcome-message {
+    font-size: 2.1rem;
+    color: #fff;
+    margin-bottom: 60px;
+    margin-top: 0;
+    text-align: center;
+    background: linear-gradient(90deg, #00e1ff 0%, #ff00e1 50%, #00ffae 100%);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-shadow: 0 2px 32px #00e1ff44, 0 1px 2px #000;
+    line-height: 1.2;
+}
+
+.centered-chat .input-row {
+    width: 100%;
+    max-width: 650px;
+    justify-content: center;
+    margin-top: 0;
+    margin-bottom: 0;
+    background: rgba(10,10,20,0.85);
+    border-radius: 40px;
+    box-shadow: 0 0 60px 0 #00e1ff33, 0 0 120px 0 #ff00e133;
+    padding: 18px 18px 18px 18px;
+    transition: box-shadow 0.3s;
+}
+
+.centered-chat #user-input {
+    box-shadow: none;
+    animation: none;
+    border: 1.5px solid #00e1ff;
+    background: #0a0a0a;
+    font-size: 1.25rem;
+}
+
+.centered-chat #send-btn {
+    font-size: 1.18rem;
+    font-weight: 700;
+    background: #23232b;
+    color: #fff;
+    border-radius: 50px;
+    margin-left: 12px;
+    box-shadow: 0 2px 16px #0008;
+    padding: 0 32px;
+    height: 54px;
+    transition: background 0.2s, box-shadow 0.2s;
+}
+
+.centered-chat #send-btn:hover {
+    background: #00e1ff;
+    color: #222;
+    box-shadow: 0 0 24px #00e1ff99;
+}
+
+@media (max-width: 768px) {
+    .centered-chat {
+        min-height: 220px;
+        height: 50vh;
+        padding-top: 4vh;
+    }
+    .centered-chat .welcome-message {
+        font-size: 1.2rem;
+        margin-bottom: 28px;
+    }
+    .centered-chat .input-row {
+        max-width: 98vw;
+        padding: 10px 6px 10px 6px;
+    }
+    .centered-chat #user-input {
+        font-size: 1.08rem;
+    }
+    .centered-chat #send-btn {
+        font-size: 1.05rem;
+        padding: 0 18px;
+        height: 44px;
     }
 }
