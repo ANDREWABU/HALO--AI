@@ -123,28 +123,29 @@ async function sendMessage() {
   // Update conversation memory
   updateConversationMemory(text);
 
-  // Check what type of response is needed
-  const responseType = determineResponseType(text);
-
   try {
-    removeTypingIndicator();
     let response;
 
-    switch (responseType) {
-      case "math":
-        response = handleMathQuestion(text);
-        break;
-      case "factual":
-        response = await handleFactualQuestion(text);
-        break;
-      case "conversation":
-      default:
-        response = generateConversationResponse(text);
-        break;
+    // First, try to handle with API search for factual questions
+    if (shouldUseAPI(text)) {
+      response = await handleWithAPI(text);
+    }
+    // Then try math
+    else if (isMathQuestion(text)) {
+      response = handleMathQuestion(text);
+    }
+    // Finally, use conversation
+    else {
+      response = generateConversationResponse(text);
     }
 
-    addMessage(response, false);
-    saveBotMessage(response);
+    // Add realistic typing delay
+    const typingTime = Math.max(800, Math.min(response.length * 15, 2000));
+    setTimeout(() => {
+      removeTypingIndicator();
+      addMessage(response, false);
+      saveBotMessage(response);
+    }, typingTime);
   } catch (error) {
     removeTypingIndicator();
     const response = generateConversationResponse(text);
@@ -153,24 +154,13 @@ async function sendMessage() {
   }
 }
 
-// ENHANCED: Determine response type
-function determineResponseType(text) {
+// Determine if we should use API for this question
+function shouldUseAPI(text) {
   const lowerText = text.toLowerCase();
 
-  // Math patterns
-  const mathPatterns = [
-    /\d+\s*[\+\-\*\/\^]\s*\d+/, // Basic arithmetic
-    /calculate|solve|math|equation|formula/i,
-    /what is \d+ [\+\-\*\/] \d+/i,
-    /square root|sqrt|percentage|percent|%/i,
-    /area|volume|perimeter|circumference/i,
-    /algebra|geometry|calculus|trigonometry/i,
-  ];
-
-  // Factual/search patterns
-  const factualPatterns = [
-    /^what is .+/i,
+  const apiPatterns = [
     /^who is .+/i,
+    /^what is .+/i,
     /^when was .+/i,
     /^where is .+/i,
     /^how does .+/i,
@@ -181,15 +171,101 @@ function determineResponseType(text) {
     /^history of .+/i,
     /^define .+/i,
     /^meaning of .+/i,
+    /^what are .+/i,
+    /^how to .+/i,
+    /^facts about .+/i,
   ];
 
-  if (mathPatterns.some((pattern) => pattern.test(lowerText))) {
-    return "math";
-  } else if (factualPatterns.some((pattern) => pattern.test(lowerText))) {
-    return "factual";
-  } else {
-    return "conversation";
+  return apiPatterns.some((pattern) => pattern.test(lowerText));
+}
+
+// Determine if it's a math question
+function isMathQuestion(text) {
+  const lowerText = text.toLowerCase();
+
+  const mathPatterns = [
+    /\d+\s*[\+\-\*\/\^]\s*\d+/,
+    /^calculate|^solve |^what is \d+ [\+\-\*\/] \d+/i,
+    /^square root|^sqrt\(|^percentage|^\d+% of/i,
+    /^area of|^volume of|^perimeter of/i,
+    /^math|^equation|^formula/i,
+  ];
+
+  return mathPatterns.some((pattern) => pattern.test(lowerText));
+}
+
+// Handle question with API
+async function handleWithAPI(text) {
+  try {
+    const searchResult = await searchGoogle(text);
+    if (searchResult && searchResult.length > 20) {
+      return searchResult;
+    } else {
+      // Fallback to common knowledge or conversation
+      return handleCommonQuestions(text) || generateConversationResponse(text);
+    }
+  } catch (error) {
+    return handleCommonQuestions(text) || generateConversationResponse(text);
   }
+}
+
+// Handle common questions without API calls
+function handleCommonQuestions(text) {
+  const lowerText = text.toLowerCase();
+
+  // Current facts (as of 2024)
+  const commonKnowledge = {
+    // Presidents
+    "president of america":
+      "Joe Biden is the 46th and current president of the United States (as of 2024).",
+    "president of usa":
+      "Joe Biden is the 46th and current president of the United States (as of 2024).",
+    "president of united states":
+      "Joe Biden is the 46th and current president of the United States (as of 2024).",
+    "current president":
+      "Joe Biden is the 46th and current president of the United States (as of 2024).",
+
+    // Capitals
+    "capital of usa": "Washington, D.C. is the capital of the United States.",
+    "capital of america":
+      "Washington, D.C. is the capital of the United States.",
+    "capital of united states":
+      "Washington, D.C. is the capital of the United States.",
+    "capital of france": "Paris is the capital of France.",
+    "capital of england":
+      "London is the capital of England and the United Kingdom.",
+    "capital of germany": "Berlin is the capital of Germany.",
+    "capital of china": "Beijing is the capital of China.",
+    "capital of japan": "Tokyo is the capital of Japan.",
+
+    // Basic facts
+    "population of earth":
+      "The current world population is approximately 8.1 billion people (2024 estimates).",
+    "largest country": "Russia is the largest country by land area.",
+    "largest ocean": "The Pacific Ocean is the largest and deepest ocean.",
+    "tallest mountain":
+      "Mount Everest is the tallest mountain above sea level.",
+
+    // Science
+    "speed of light":
+      "The speed of light in a vacuum is 299,792,458 meters per second.",
+    "gravity on earth":
+      "The acceleration due to gravity on Earth is approximately 9.8 m/s².",
+    "planets in solar system":
+      "There are 8 planets in our solar system: Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, and Neptune.",
+
+    // Math constants
+    "value of pi": "Pi (π) is approximately 3.14159.",
+    "value of e": "Euler's number (e) is approximately 2.71828.",
+  };
+
+  for (const [question, answer] of Object.entries(commonKnowledge)) {
+    if (lowerText.includes(question)) {
+      return answer;
+    }
+  }
+
+  return null;
 }
 
 // ENHANCED: Math question handler
@@ -198,7 +274,9 @@ function handleMathQuestion(text) {
 
   try {
     // Basic arithmetic
-    const arithmeticMatch = text.match(/(\d+)\s*([\+\-\*\/\^])\s*(\d+)/);
+    const arithmeticMatch = text.match(
+      /(\d+\.?\d*)\s*([\+\-\*\/\^])\s*(\d+\.?\d*)/
+    );
     if (arithmeticMatch) {
       const num1 = parseFloat(arithmeticMatch[1]);
       const num2 = parseFloat(arithmeticMatch[3]);
@@ -229,14 +307,22 @@ function handleMathQuestion(text) {
     }
 
     // Square root
-    const sqrtMatch = text.match(/square root of (\d+)|sqrt\((\d+)\)/i);
+    const sqrtMatch = text.match(
+      /square root of (\d+\.?\d*)|sqrt\((\d+\.?\d*)\)/i
+    );
     if (sqrtMatch) {
       const num = parseFloat(sqrtMatch[1] || sqrtMatch[2]);
-      return `The square root of ${num} is ${Math.sqrt(num)}`;
+      if (num >= 0) {
+        return `The square root of ${num} is ${Math.sqrt(num)}`;
+      } else {
+        return `The square root of ${num} is not a real number (imaginary number)`;
+      }
     }
 
     // Percentage
-    const percentMatch = text.match(/(\d+)% of (\d+)|what is (\d+)% of (\d+)/i);
+    const percentMatch = text.match(
+      /(\d+\.?\d*)% of (\d+\.?\d*)|what is (\d+\.?\d*)% of (\d+\.?\d*)/i
+    );
     if (percentMatch) {
       const percent = parseFloat(percentMatch[1] || percentMatch[3]);
       const number = parseFloat(percentMatch[2] || percentMatch[4]);
@@ -244,57 +330,20 @@ function handleMathQuestion(text) {
       return `${percent}% of ${number} is ${result}`;
     }
 
-    // Area calculations
-    if (lowerText.includes("area")) {
-      if (lowerText.includes("circle") && text.match(/radius (\d+)/)) {
-        const radius = parseFloat(text.match(/radius (\d+)/)[1]);
-        const area = Math.PI * radius * radius;
-        return `The area of a circle with radius ${radius} is ${area.toFixed(
-          2
-        )}`;
-      }
-      if (lowerText.includes("rectangle") && text.match(/(\d+) by (\d+)/)) {
-        const length = parseFloat(text.match(/(\d+) by (\d+)/)[1]);
-        const width = parseFloat(text.match(/(\d+) by (\d+)/)[2]);
-        return `The area of a rectangle ${length} by ${width} is ${
-          length * width
-        }`;
-      }
+    // Power/exponent
+    const powerMatch = text.match(
+      /(\d+\.?\d*)\s*(?:\^|to the power of|raised to)\s*(\d+\.?\d*)/i
+    );
+    if (powerMatch) {
+      const base = parseFloat(powerMatch[1]);
+      const exponent = parseFloat(powerMatch[2]);
+      const result = Math.pow(base, exponent);
+      return `${base}^${exponent} = ${result}`;
     }
 
-    // If no specific pattern matches, try evaluating as math expression
-    try {
-      // Simple safe evaluation for basic math
-      const sanitized = text.replace(/[^0-9\+\-\*\/\(\)\.\s]/g, "");
-      if (sanitized.length > 5) {
-        // Only if it looks like a math expression
-        const result = eval(sanitized);
-        if (typeof result === "number" && !isNaN(result)) {
-          return `The answer is: ${result}`;
-        }
-      }
-    } catch (e) {
-      // Fall through to default response
-    }
-
-    return "I can help with basic math! Try asking something like 'What is 15 + 27?' or 'Calculate 45 * 3'";
+    return "I can help with basic math! Try asking something like:\n• '15 + 27'\n• 'Square root of 64'\n• '25% of 200'\n• '2 to the power of 8'";
   } catch (error) {
-    return "I had trouble solving that math problem. Could you rephrase it? For example: 'What is 8 * 7?'";
-  }
-}
-
-// ENHANCED: Factual question handler with better web search
-async function handleFactualQuestion(text) {
-  try {
-    const searchResult = await searchGoogle(text);
-    if (searchResult) {
-      return `🔍 ${searchResult}`;
-    } else {
-      // Fallback to conversation response if search fails
-      return generateConversationResponse(text);
-    }
-  } catch (error) {
-    return generateConversationResponse(text);
+    return "I had trouble solving that math problem. Could you rephrase it?";
   }
 }
 
@@ -312,8 +361,24 @@ async function searchGoogle(query) {
     const data = await response.json();
     if (data.items && data.items.length > 0) {
       const firstResult = data.items[0];
-      // Return a more informative response
-      return `${firstResult.title}: ${firstResult.snippet}`;
+
+      // Clean up the response
+      let cleanSnippet = firstResult.snippet
+        .replace(/Wikipedia/g, "")
+        .replace(/\[\d+\]/g, "")
+        .replace(/\.\.\./g, ".")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      const cleanTitle = firstResult.title
+        .replace(/ - Wikipedia$/, "")
+        .replace(/\(Wikipedia\)/, "")
+        .trim();
+
+      // Only return if we have meaningful content
+      if (cleanSnippet.length > 20) {
+        return `${cleanTitle}: ${cleanSnippet}`;
+      }
     }
     return null;
   } catch (error) {
@@ -333,7 +398,7 @@ function saveBotMessage(text) {
   }
 }
 
-// ULTIMATE CONVERSATION RESPONSE GENERATOR (Enhanced)
+// IMPROVED CONVERSATION RESPONSE GENERATOR
 function generateConversationResponse(userMessage) {
   const lowerMessage = userMessage.toLowerCase().trim();
   conversationMemory.conversationDepth++;
@@ -348,13 +413,8 @@ function generateConversationResponse(userMessage) {
     );
     if (nameMatch) {
       conversationMemory.userName = nameMatch[1];
-      return `Nice to meet you, ${conversationMemory.userName}! 😊 I'm really excited to get to know you better. What's been on your mind lately?`;
+      return `Nice to meet you, ${conversationMemory.userName}! 😊 What would you like to know or talk about?`;
     }
-  }
-
-  // === MATH OFFER ===
-  if (lowerMessage.match(/(math|calculate|numbers|arithmetic)/)) {
-    return "I can help with math problems! Try asking me things like:\n• 'What is 15 × 27?'\n• 'Calculate 45 + 89'\n• 'Square root of 64'\n• '25% of 200'\nWhat would you like me to calculate?";
   }
 
   // === EMOTION DETECTION & RESPONSE ===
@@ -364,51 +424,52 @@ function generateConversationResponse(userMessage) {
     )
   ) {
     conversationMemory.userMood = "sad";
-    const sadResponses = [
-      `I'm really sorry you're feeling this way ${
-        conversationMemory.userName ? conversationMemory.userName : ""
-      } 💙. It takes courage to share these feelings. Want to talk more about what's going on?`,
-      `That sounds really heavy. I'm here to listen without judgment. Sometimes just talking about it can help lighten the load. What's been bothering you?`,
-    ];
-    return sadResponses[Math.floor(Math.random() * sadResponses.length)];
+    return `I'm really sorry you're feeling this way. 💙 Want to talk about what's bothering you?`;
   }
 
-  // ... (keep all your existing emotion responses, they're great!)
-
-  // === FACTUAL QUESTIONS FALLBACK ===
   if (
     lowerMessage.match(
-      /(what is |who is |when was |where is |how does |why does )/
+      /(happy|excited|great|awesome|amazing|wonderful|thrilled)/
     )
   ) {
-    return "I tried searching for that information but couldn't find a clear answer. Could you rephrase your question or ask me something else? I'm great with math problems and personal conversations!";
+    conversationMemory.userMood = "happy";
+    return `That's wonderful! 😄 I'm happy for you! What's making you feel so good?`;
   }
 
-  // === GREETINGS & CASUAL OPENERS ===
-  if (
-    lowerMessage.match(
-      /^(hello|hi|hey|yo|what's up|whats good|howdy|greetings)/
-    )
-  ) {
-    const greetings = conversationMemory.userName
-      ? [
-          `Hey ${conversationMemory.userName}! 👋 I can help with math problems, search for information, or just chat! What would you like to do?`,
-          `Hello ${conversationMemory.userName}! 😊 Need help with calculations or want to talk about something?`,
-        ]
-      : [
-          `Hey there! 👋 I'm your smart assistant! I can:\n• Solve math problems\n• Search for information\n• Have meaningful conversations\nWhat would you like to try first?`,
-          `Hello! 😊 I'm here to help with math, facts, or just to chat! What's on your mind?`,
-        ];
-    return greetings[Math.floor(Math.random() * greetings.length)];
+  // === GREETINGS ===
+  if (lowerMessage.match(/^(hello|hi|hey|what's up|howdy)/)) {
+    if (conversationMemory.userName) {
+      return `Hey ${conversationMemory.userName}! 👋 What can I help you with today?`;
+    } else {
+      return `Hello! 👋 I can answer questions, help with math, or just chat. What would you like to know?`;
+    }
   }
 
-  // ... (keep all your existing conversation responses)
+  // === HOW ARE YOU ===
+  if (lowerMessage.match(/(how are you|how you doing|how's it going)/)) {
+    return "I'm doing great! Ready to help you with anything. How are you feeling?";
+  }
 
-  // === DEFAULT RESPONSES FOR ANYTHING ELSE ===
+  // === THANKS ===
+  if (lowerMessage.match(/(thank|thanks|appreciate)/)) {
+    return "You're welcome! 😊 Happy to help!";
+  }
+
+  // === GOODBYE ===
+  if (lowerMessage.match(/(bye|goodbye|see you|talk later)/)) {
+    if (conversationMemory.userName) {
+      return `Goodbye ${conversationMemory.userName}! 👋 Have a great day!`;
+    } else {
+      return "Goodbye! 👋 Take care!";
+    }
+  }
+
+  // === DEFAULT RESPONSES ===
   const defaultResponses = [
-    "That's interesting! I can help you with math problems, search for information, or just chat. What would you like to do?",
-    "Thanks for sharing! I'm here to help with calculations, answer questions, or have a conversation. What would you like to explore?",
-    "I appreciate you sharing that! I can assist with math, search the web, or just listen. What would you prefer?",
+    "I'd be happy to help with that! Could you tell me more?",
+    "That's interesting! What would you like to know about this?",
+    "I can help answer questions, solve math problems, or just chat. What would you prefer?",
+    "Tell me more about what you're looking for!",
   ];
 
   return defaultResponses[Math.floor(Math.random() * defaultResponses.length)];
@@ -422,30 +483,9 @@ function updateConversationMemory(message) {
     conversationMemory.recentTopics.shift();
   }
   conversationMemory.recentTopics.push(message.substring(0, 50));
-
-  // Extract interests (enhanced with math interest)
-  const interestKeywords = {
-    math: ["math", "calculate", "numbers", "equation", "algebra", "geometry"],
-    music: ["music", "song", "band", "artist", "concert"],
-    sports: ["sports", "game", "team", "player", "exercise"],
-    books: ["book", "read", "novel", "author"],
-    movies: ["movie", "film", "netflix", "cinema"],
-    travel: ["travel", "vacation", "trip", "destination"],
-    food: ["food", "cook", "recipe", "restaurant"],
-    tech: ["tech", "computer", "phone", "app", "software"],
-  };
-
-  for (const [interest, keywords] of Object.entries(interestKeywords)) {
-    if (
-      keywords.some((keyword) => lowerMessage.includes(keyword)) &&
-      !conversationMemory.userInterests.includes(interest)
-    ) {
-      conversationMemory.userInterests.push(interest);
-    }
-  }
 }
 
-// UI Functions (keep these the same)
+// UI Functions
 function addMessage(text, isUser) {
   const messageDiv = document.createElement("div");
   messageDiv.className = `message ${isUser ? "user" : "bot"}`;
@@ -505,10 +545,10 @@ function updateActiveChat() {
 }
 
 function updateWelcomeMessage() {
-  if (chatWindow.children.length > 0) {
-    welcomeMessage.style.opacity = "0";
+  if (chatWindow.children.length > 1) {
+    welcomeMessage.style.display = "none";
   } else {
-    welcomeMessage.style.opacity = "1";
+    welcomeMessage.style.display = "block";
   }
 }
 
@@ -556,7 +596,7 @@ function toggleSidebar() {
 if (!sidebarToggle) {
   const toggleBtn = document.createElement("button");
   toggleBtn.className = "sidebar-toggle";
-  toggleBtn.innerHTML = "☰"; // Hamburger icon
+  toggleBtn.innerHTML = "☰";
   toggleBtn.onclick = toggleSidebar;
   document.body.appendChild(toggleBtn);
   sidebarToggle = toggleBtn;
